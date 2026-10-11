@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NPC Flip Finder</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #262b36;
+    --text: #e6e8ee;
+    --muted: #8a91a2;
+    --accent: #f5b942;
+    --green: #4ade80;
+    --red: #f87171;
+    --blue: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  h1 { margin: 0; font-size: 20px; }
+  h1 span { color: var(--accent); }
+  nav { display: flex; gap: 6px; }
+  nav a {
+    color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 600;
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+  }
+  nav a.active { color: #111; background: var(--accent); border-color: var(--accent); }
+  #status { color: var(--muted); font-size: 13px; }
+  main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+
+  .controls {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; margin-bottom: 16px;
+  }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 13px; }
+  input, select, button {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { cursor: pointer; background: var(--accent); color: #111; border: none; font-weight: 600; }
+  button:hover { filter: brightness(1.1); }
+  .hint { font-size: 11px; color: var(--muted); }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs button { background: var(--panel); color: var(--muted); border: 1px solid var(--border); }
+  .tabs button.active { background: var(--accent); color: #111; border-color: var(--accent); }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+  th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  th {
+    position: sticky; top: 0; background: var(--panel); color: var(--muted);
+    font-size: 12px; font-weight: 600; cursor: pointer; user-select: none;
+  }
+  th.sorted { color: var(--accent); }
+  tbody tr:hover { background: #1c2029; }
+  td.item { font-weight: 600; }
+  td.total { background: rgba(74, 222, 128, .08); font-size: 15px; }
+  td.item small, td.npc small { display: block; color: var(--muted); font-weight: 400; font-size: 11px; }
+  td.npc { text-align: left; }
+  .price { cursor: copy; border-bottom: 1px dashed var(--muted); }
+  .buy { color: var(--blue); }
+  .sell { color: var(--accent); }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .mode { font-size: 12px; color: var(--muted); }
+  .mode.instant { color: var(--green); font-weight: 600; }
+  .warn {
+    display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px;
+    background: #3b2a12; color: var(--accent); font-size: 10px; font-weight: 600;
+  }
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: #111; padding: 8px 14px; border-radius: 6px;
+    font-weight: 600; opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+  .empty { padding: 30px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>NPC <span>Flip</span> Finder</h1>
+  <nav>
+    <a href="index.html">Bazaar flip</a>
+    <a href="npc.html" class="active">NPC flip</a>
+  </nav>
+  <div id="status">Chargement…</div>
+</header>
+
+<main>
+  <section class="controls">
+    <label>Budget par item (coins)
+      <input id="budget" type="text" inputmode="numeric" value="10m">
+      <span class="hint">Ex : 500k, 10m, 1.5b</span>
+    </label>
+    <label>Taxe du bazar
+      <select id="tax">
+        <option value="1.25">1,25 % (de base)</option>
+        <option value="1.125">1,125 % (Bazaar Flipper I)</option>
+        <option value="1">1 % (Bazaar Flipper II)</option>
+      </select>
+      <span class="hint">Seulement quand tu vends au bazar</span>
+    </label>
+    <label>Limite d'achat PNJ / jour
+      <input id="npcLimit" type="number" min="1" step="1" value="640">
+      <span class="hint">Par item, reset à minuit GMT · 6400 si Diaz est maire</span>
+    </label>
+    <label>Plafond de vente PNJ / jour
+      <input id="npcSellCap" type="text" inputmode="numeric" value="500m">
+      <span class="hint">Coins gagnés en vendant aux PNJ, par profil</span>
+    </label>
+    <label>Échanges min / heure
+      <input id="minSales" type="text" inputmode="numeric" value="100">
+      <span class="hint">Pour les buy orders et sell orders</span>
+    </label>
+    <label>Secondes par inventaire
+      <input id="secPerInv" type="number" min="5" step="5" value="45">
+      <span class="hint">Acheter ou récupérer un inventaire plein, puis le revendre</span>
+    </label>
+    <label>Inventaires max par flip
+      <input id="maxInv" type="number" min="1" step="1" value="5">
+      <span class="hint">Au-delà, la quantité est réduite (36 stacks de 64 par inventaire)</span>
+    </label>
+    <label>Attente max de l'ordre (h)
+      <input id="maxHours" type="number" min="0.1" step="0.5" value="12">
+      <span class="hint">Temps de remplissage du buy / sell order</span>
+    </label>
+    <label>Profit net minimum (coins)
+      <input id="minProfit" type="text" inputmode="numeric" value="10k">
+    </label>
+    <label>Méthode
+      <select id="method">
+        <option value="instant">Prix instantanés (« Buy / Sell price » du jeu)</option>
+        <option value="order">Ordres à placer (buy / sell order)</option>
+        <option value="all">Les deux</option>
+      </select>
+    </label>
+    <label>Trier par
+      <select id="sortBy">
+        <option value="profit">Marge nette totale</option>
+        <option value="perStack">Bénéfice par stack (64)</option>
+        <option value="perHour">Profit / heure de jeu (temps actif)</option>
+        <option value="marginPct">Marge nette %</option>
+      </select>
+    </label>
+    <label>Rechercher
+      <input id="search" type="text" placeholder="hay bale, leather…">
+    </label>
+    <label class="check"><input id="hideSus" type="checkbox" checked> Masquer les pièges (volume gonflé, prix manipulé, carnet vide)</label>
+    <label class="check"><input id="auto" type="checkbox" checked> Actualiser toutes les 30 s</label>
+    <button id="refresh" type="button">Actualiser maintenant</button>
+  </section>
+
+  <div class="tabs">
+    <button type="button" data-tab="toNpc">Bazar → PNJ <span id="countToNpc"></span></button>
+    <button type="button" data-tab="fromNpc">PNJ → Bazar <span id="countFromNpc"></span></button>
+  </div>
+  <p id="tabHint" class="hint"></p>
+  <p id="traps" class="hint"></p>
+
+  <div class="table-wrap">
+    <table>
+      <thead id="head"></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <p class="hint">
+    Clique sur un prix ou une quantité pour le copier. Temps actif = inventaires × secondes par inventaire : c'est le temps que tu passes vraiment à faire le flip, et le profit / h de jeu se calcule dessus.
+    L'attente de l'ordre suppose que tu captes tout le volume : c'est un minimum, et tu peux faire autre chose pendant ce temps.
+    Une fois l'historique Coflnet chargé, les échanges / h utilisent le rythme le plus faible entre la moyenne 7 j, les 3 derniers jours et une journée médiane.
+  </p>
+</main>
+<div id="toast"></div>
+
+<script src="npc-shops.js"></script>
+<script>
+const BAZAAR_URL = "https://api.hypixel.net/v2/skyblock/bazaar";
+const ITEMS_URL = "https://api.hypixel.net/v2/resources/skyblock/items";
+const HISTORY_URL = id => `https://sky.coflnet.com/api/bazaar/${encodeURIComponent(id)}/history/week`;
+const MAX_ORDER_AMOUNT = 71680; // quantité max d'un ordre au bazar
+const STEP = 0.1;               // pas de prix du bazar
+const REFRESH_MS = 30000;
+const HISTORY_TTL = 15 * 60 * 1000;
+const HISTORY_TOP_N = 30;
+const HISTORY_PARALLEL = 3;
+const MANIP_RATIO = 1.5;        // sell order > 1,5 × médiane 7 j : prix gonflé
+const STACK_SIZE = 64;
+const INVENTORY_SIZE = 36 * STACK_SIZE; // un inventaire plein de stacks de 64
+
+// Boutiques qui ne s'ouvrent qu'à une condition (absent des données NEU, d'après le wiki SkyBlock)
+const SHOP_UNLOCKS = {
+  LUCKY_DICE: "Apporter un Oasis Rabbit à Jake (maison au sommet du Mushroom Desert : 261, 184, -565)",
+  HARDENED_WOOD: "Apporter un Oasis Sheep à Jake (maison au sommet du Mushroom Desert : 261, 184, -565)",
+};
+
+const ISLANDS = {
+  hub: "Hub", crimson_isle: "Crimson Isle", foraging_1: "The Park", mining_1: "Gold Mine",
+  mining_2: "Deep Caverns", mining_3: "Dwarven Mines", combat_1: "Spider's Den", combat_3: "The End",
+  farming_1: "The Farming Islands", winter: "Jerry's Workshop", dungeon_hub: "Dungeon Hub",
+  garden: "Garden", crystal_hollows: "Crystal Hollows", fishing_1: "Backwater Bayou",
+};
+
+const TABS = {
+  toNpc: {
+    hint: "Achète au bazar puis revends au PNJ. Le prix PNJ est fixe : pas de risque de chute à la revente. " +
+      "Par défaut, l'achat se fait au prix instantané (« Buy price » du jeu) : tu achètes tout de suite les sell offers moins chères que le PNJ. " +
+      "Tu ne peux porter qu'un inventaire à la fois : chaque inventaire se rachète puis se revend à la main, d'où le temps actif. " +
+      "Achat instantané = sell offers déjà moins chères que le PNJ (profit immédiat, rare). " +
+      "Buy order à placer = tu crées un buy order à ce prix (juste au-dessus du « Sell price » affiché en jeu) et tu attends que des joueurs te vendent. " +
+      "N'achète pas au « Buy price » du jeu : c'est le prix de l'achat instantané, bien plus cher.",
+    columns: [
+      ["name", "Item"], ["mode", "Mode"], ["buyPrice", "Ton prix d'achat<br><small>selon le mode</small>"],
+      ["instaBuy", "« Buy price » en jeu<br><small>achat instantané</small>"], ["sellPrice", "Revente PNJ"], ["net", "Marge / item"], ["perStack", "Bénéfice<br>par stack"], ["marginPct", "Marge %"], ["qty", "Quantité"],
+      ["cost", "Coût"], ["profit", "Marge nette<br>totale"], ["inventories", "Inventaires<br><small>à revendre au PNJ</small>"],
+      ["activeHours", "Temps actif<br><small>manipulation</small>"], ["perHour", "Profit / h<br><small>de jeu</small>"],
+      ["hours", "Attente<br><small>de l'ordre</small>"], ["rate", "Achats / h<br><small>remplit ton buy order</small>"],
+    ],
+  },
+  fromNpc: {
+    hint: "Achète au PNJ puis revends au bazar (taxe déduite). La quantité est plafonnée par la limite d'achat PNJ par jour. " +
+      "Par défaut, la revente se fait au prix instantané (« Sell price » du jeu) : tu vends tout de suite dans les buy orders existants. " +
+      "Certaines boutiques demandent un déblocage (quête, réputation…) : vérifie que tu y as accès. " +
+      "Vente instantanée = tu vends dans les buy orders existants (au « Sell price » du jeu) tant que c'est rentable. " +
+      "Sell order à placer = tu crées un sell order à ce prix (juste sous le « Buy price » affiché en jeu) et tu attends que des joueurs t'achètent.",
+    columns: [
+      ["name", "Item"], ["npc", "Acheter chez"], ["buyPrice", "Prix PNJ"], ["mode", "Mode"],
+      ["sellPrice", "Ton prix de vente<br><small>selon le mode</small>"],
+      ["instaSell", "« Sell price » en jeu<br><small>vente instantanée</small>"], ["net", "Marge nette / item"], ["perStack", "Bénéfice<br>par stack"], ["marginPct", "Marge %"],
+      ["qty", "Quantité / jour"], ["cost", "Coût"], ["profit", "Marge nette<br>totale"], ["inventories", "Inventaires"],
+      ["activeHours", "Temps actif<br><small>manipulation</small>"], ["perHour", "Profit / h<br><small>de jeu</small>"],
+      ["hours", "Attente<br><small>de l'ordre</small>"], ["rate", "Ventes / h<br><small>remplit ton sell order</small>"],
+    ],
+  },
+};
+
+const $ = id => document.getElementById(id);
+const settingIds = ["budget", "tax", "npcLimit", "npcSellCap", "minSales", "secPerInv", "maxInv", "maxHours", "minProfit", "method", "sortBy", "hideSus", "auto"];
+
+let products = {};
+let names = {};
+let npcSell = {};           // id -> prix de revente au PNJ (API Hypixel)
+let tab = "toNpc";
+let refreshTimer = null;
+const priceHistory = {};    // id -> { medSellOrder, recent*/daily* rates, at } ou { failed, at }
+const historyQueue = [];
+let historyActive = 0;
+let renderTimer = null;
+
+// ---------- utilitaires ----------
+function parseCoins(str) {
+  const m = String(str).trim().toLowerCase().replace(/[\s,_]/g, "").match(/^(\d*\.?\d+)([kmb]?)$/);
+  if (!m) return 0;
+  const mult = { "": 1, k: 1e3, m: 1e6, b: 1e9 }[m[2]];
+  return parseFloat(m[1]) * mult;
+}
+
+function fmt(n) {
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (n / 1e9).toFixed(2) + "b";
+  if (abs >= 1e6) return (n / 1e6).toFixed(2) + "m";
+  if (abs >= 1e4) return (n / 1e3).toFixed(1) + "k";
+  return n.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+}
+
+function fmtHours(h) {
+  if (h < 1) return Math.max(1, Math.round(h * 60)) + " min";
+  if (h < 48) return h.toFixed(1) + " h";
+  return (h / 24).toFixed(1) + " j";
+}
+
+const round1 = x => Math.round(x * 10) / 10;
+
+function prettyId(id) {
+  return id.replace(/^ENCHANTMENT_/, "")
+    .split(/[_:]/).map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(" ");
+}
+
+function islandName(id) {
+  if (!id) return "île inconnue";
+  return ISLANDS[id] || id.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove("show"), 1200);
+}
+
+function median(values) {
+  const v = [...values].sort((a, b) => a - b);
+  if (!v.length) return 0;
+  const mid = v.length >> 1;
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+// ---------- réglages persistants ----------
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("npcFlipSettings.v1") || "{}");
+    for (const id of settingIds) {
+      if (!(id in saved)) continue;
+      if ($(id).type === "checkbox") $(id).checked = saved[id];
+      else $(id).value = saved[id];
+    }
+    if (saved.tab in TABS) tab = saved.tab;
+  } catch {}
+}
+
+function saveSettings() {
+  try {
+    const s = { tab };
+    for (const id of settingIds) s[id] = $(id).type === "checkbox" ? $(id).checked : $(id).value;
+    localStorage.setItem("npcFlipSettings.v1", JSON.stringify(s));
+  } catch {}
+}
+
+function readSettings() {
+  return {
+    budget: parseCoins($("budget").value),
+    tax: parseFloat($("tax").value) / 100,
+    npcLimit: Math.max(1, parseInt($("npcLimit").value, 10) || 1),
+    npcSellCap: parseCoins($("npcSellCap").value) || Infinity,
+    minSales: Math.max(1, parseCoins($("minSales").value)),
+    maxHours: parseFloat($("maxHours").value) || Infinity,
+    secPerInv: Math.max(1, parseFloat($("secPerInv").value) || 45),
+    maxInvQty: Math.max(1, parseInt($("maxInv").value, 10) || 1) * INVENTORY_SIZE,
+    minProfit: parseCoins($("minProfit").value),
+    hideSus: $("hideSus").checked,
+    search: $("search").value.trim().toLowerCase(),
+  };
+}
+
+// ---------- calcul des flips ----------
+// Échanges par heure, corrigés par l'historique (un gros pic isolé ne gonfle pas le volume)
+function robustRates(id, q) {
+  let buyRate = q.sellMovingWeek / 168;  // instasells : remplissent les buy orders
+  let sellRate = q.buyMovingWeek / 168;  // instabuys : remplissent les sell orders
+  const h = priceHistory[id];
+  const verified = !!h && !h.failed;
+  let inflated = false;
+  if (verified) {
+    const avgBuy = buyRate, avgSell = sellRate;
+    for (const r of [h.recentBuyRate, h.dailyBuyRate]) if (r != null) buyRate = Math.min(buyRate, r);
+    for (const r of [h.recentSellRate, h.dailySellRate]) if (r != null) sellRate = Math.min(sellRate, r);
+    inflated = buyRate < avgBuy * 0.25 || sellRate < avgSell * 0.25;
+  }
+  return { buyRate, sellRate, verified, inflated, h };
+}
+
+function matchesSearch(id, name, search) {
+  return !search || name.toLowerCase().includes(search) || id.toLowerCase().includes(search);
+}
+
+function bazaarToNpc(s) {
+  const rows = [];
+  for (const [id, p] of Object.entries(products)) {
+    const npc = npcSell[id];
+    if (!npc) continue;
+    const name = names[id] || prettyId(id);
+    if (!matchesSearch(id, name, s.search)) continue;
+
+    // Au-delà du plafond journalier, le PNJ ne rachète plus rien
+    const sellCapQty = Math.floor(s.npcSellCap / npc);
+
+    const instaBuy = p.buy_summary[0]?.pricePerUnit ?? null; // « Buy price » affiché en jeu
+
+    // Achat instantané : on rachète les sell offers moins chères que le prix PNJ
+    let qty = 0, cost = 0;
+    for (const l of p.buy_summary) {
+      if (l.pricePerUnit >= npc) break;
+      const n = Math.min(l.amount, Math.floor((s.budget - cost) / l.pricePerUnit), sellCapQty - qty, s.maxInvQty - qty);
+      if (n <= 0) break;
+      qty += n;
+      cost += n * l.pricePerUnit;
+      if (n < l.amount) break;
+    }
+    if (qty > 0 && qty * npc - cost >= s.minProfit) {
+      const profit = qty * npc - cost;
+      rows.push({
+        id, name, mode: "instant", buyPrice: cost / qty, instaBuy, sellPrice: npc, net: npc - cost / qty,
+        marginPct: (npc * qty / cost - 1) * 100, qty, cost, profit, hours: 0, rate: null,
+      });
+    }
+
+    // Buy order juste au-dessus du meilleur, s'il reste sous le prix PNJ
+    const top = p.sell_summary[0]?.pricePerUnit;
+    if (!top) continue;
+    const buyOrder = round1(top + STEP);
+    if (buyOrder >= npc) continue;
+    const r = robustRates(id, p.quick_status);
+    if (r.buyRate < s.minSales) continue;
+    const orderQty = Math.min(Math.floor(s.budget / buyOrder), MAX_ORDER_AMOUNT, sellCapQty, s.maxInvQty);
+    if (orderQty < 1) continue;
+    const hours = orderQty / r.buyRate;
+    const net = npc - buyOrder;
+    const profit = net * orderQty;
+    if (hours > s.maxHours || profit < s.minProfit) continue;
+    rows.push({
+      id, name, mode: "order", buyPrice: buyOrder, instaBuy, sellPrice: npc, net, marginPct: net / buyOrder * 100,
+      qty: orderQty, cost: orderQty * buyOrder, profit, hours, rate: r.buyRate,
+      verified: r.verified, inflated: r.inflated,
+    });
+  }
+  return rows;
+}
+
+function npcToBazaar(s) {
+  const rows = [];
+  const shops = window.NPC_SHOPS?.items || {};
+  for (const [id, offers] of Object.entries(shops)) {
+    const p = products[id];
+    if (!p) continue;
+    const shop = offers[0]; // le PNJ le moins cher
+    const price = shop.price;
+    const name = names[id] || prettyId(id);
+    if (!matchesSearch(id, name, s.search)) continue;
+    const maxQty = Math.min(s.npcLimit, Math.floor(s.budget / price), MAX_ORDER_AMOUNT, s.maxInvQty);
+    if (maxQty < 1) continue;
+    const q = p.quick_status;
+    const thinBook = q.sellOrders < 3 || q.buyOrders < 3;
+    const instaSell = p.sell_summary[0]?.pricePerUnit ?? null; // « Sell price » affiché en jeu
+
+    // Vente instantanée dans les buy orders existants, tant que c'est rentable
+    let qty = 0, revenue = 0;
+    for (const l of p.sell_summary) {
+      const netPrice = l.pricePerUnit * (1 - s.tax);
+      if (netPrice <= price) break;
+      const n = Math.min(l.amount, maxQty - qty);
+      qty += n;
+      revenue += n * netPrice;
+      if (qty >= maxQty) break;
+    }
+    if (qty > 0 && revenue - qty * price >= s.minProfit) {
+      const profit = revenue - qty * price;
+      rows.push({
+        id, name, shop, offers: offers.length, mode: "instant", buyPrice: price, instaSell,
+        sellPrice: revenue / qty / (1 - s.tax), net: revenue / qty - price, marginPct: (revenue / (qty * price) - 1) * 100,
+        qty, cost: qty * price, profit, hours: 0, rate: null, thinBook,
+      });
+    }
+
+    // Sell order juste sous la sell offer la moins chère
+    const low = p.buy_summary[0]?.pricePerUnit;
+    if (!low) continue;
+    const sellOrder = round1(low - STEP);
+    const net = sellOrder * (1 - s.tax) - price;
+    if (net <= 0) continue;
+    const r = robustRates(id, q);
+    if (r.sellRate < s.minSales) continue;
+    const hours = maxQty / r.sellRate;
+    const profit = net * maxQty;
+    if (hours > s.maxHours || profit < s.minProfit) continue;
+    // Prix de revente gonflé par rapport à la semaine : il risque de redescendre avant que ton ordre parte
+    const manipulated = r.verified && sellOrder > r.h.medSellOrder * MANIP_RATIO;
+    rows.push({
+      id, name, shop, offers: offers.length, mode: "order", buyPrice: price, sellPrice: sellOrder, instaSell, net,
+      marginPct: net / price * 100, qty: maxQty, cost: maxQty * price, profit, hours,
+      rate: r.sellRate, verified: r.verified, inflated: r.inflated, manipulated, thinBook,
+    });
+  }
+  return rows;
+}
+
+function computeFlips(which) {
+  const s = readSettings();
+  const mode = $("method").value;
+  const rows = (which === "toNpc" ? bazaarToNpc(s) : npcToBazaar(s)).filter(f => mode === "all" || f.mode === mode);
+  for (const f of rows) {
+    f.perStack = f.net * STACK_SIZE; // bénéfice net pour 64 items
+    // Temps actif : chaque inventaire doit être acheté (ou récupéré) puis revendu à la main
+    f.inventories = Math.max(1, Math.ceil(f.qty / INVENTORY_SIZE));
+    f.activeHours = f.inventories * s.secPerInv / 3600;
+    f.perHour = f.profit / f.activeHours;
+  }
+  const key = $("sortBy").value;
+  rows.sort((a, b) => b[key] - a[key] || b.profit - a.profit);
+
+  const traps = { inflated: 0, manipulated: 0, thinBook: 0 };
+  const toCheck = [];
+  const visible = [];
+  for (const f of rows) {
+    f.hidden = s.hideSus && (f.inflated || f.manipulated || (f.mode === "order" && f.thinBook));
+    // On vérifie l'historique des meilleurs ordres (inutile pour les opérations instantanées)
+    if (f.mode === "order" && toCheck.length < HISTORY_TOP_N && !(f.hidden && f.verified)) toCheck.push(f.id);
+    if (!f.hidden) { visible.push(f); continue; }
+    for (const k in traps) if (f[k]) traps[k]++;
+  }
+  return { visible, toCheck, traps };
+}
+
+// ---------- affichage ----------
+const MODE_LABELS = {
+  toNpc: { instant: "Achat instantané", order: "Buy order à placer" },
+  fromNpc: { instant: "Vente instantanée", order: "Sell order à placer" },
+};
+
+function priceCell(value, cls = "") {
+  const v = round1(value);
+  return `<span class="price ${cls}" data-copy="${v}">${v.toLocaleString("fr-FR")}</span>`;
+}
+
+function gameCell(v) {
+  return v == null ? '<span class="hint">—</span>' : `<span class="hint">${round1(v).toLocaleString("fr-FR")}</span>`;
+}
+
+function rateCell(f) {
+  if (f.mode === "instant") return '<span class="hint">—</span>';
+  const h = priceHistory[f.id];
+  return fmt(f.rate) + (h ? "" : ' <span class="hint">…</span>');
+}
+
+function flags(f) {
+  return (f.inflated ? '<span class="warn">VOLUME GONFLÉ</span>' : "") +
+    (f.manipulated ? '<span class="warn">PRIX GONFLÉ</span>' : "") +
+    (f.mode === "order" && f.thinBook ? '<span class="warn">CARNET VIDE</span>' : "");
+}
+
+function rowHtml(f) {
+  const item = `<td class="item">${f.name}${flags(f)}<small>${f.id}</small></td>`;
+  const mode = `<td><span class="mode ${f.mode}">${MODE_LABELS[tab][f.mode]}</span></td>`;
+  const common = `
+      <td class="pos">${fmt(f.net)}</td>
+      <td class="pos">${fmt(f.perStack)}</td>
+      <td class="pos">${f.marginPct.toFixed(1)} %</td>
+      <td><span class="price" data-copy="${f.qty}">${f.qty.toLocaleString("fr-FR")}</span></td>
+      <td>${fmt(f.cost)}</td>
+      <td class="pos total"><b>${fmt(f.profit)}</b></td>
+      <td class="${f.inventories > 10 ? "neg" : f.inventories > 3 ? "sell" : "pos"}">${f.inventories}</td>
+      <td>${fmtHours(f.activeHours)}</td>
+      <td class="pos">${fmt(f.perHour)}</td>
+      <td>${f.mode === "instant" ? '<span class="pos">immédiat</span>' : fmtHours(f.hours)}</td>
+      <td>${rateCell(f)}</td>`;
+  if (tab === "toNpc") {
+    return `<tr>${item}${mode}
+      <td>${priceCell(f.buyPrice, "buy")}</td>
+      <td>${gameCell(f.instaBuy)}</td>
+      <td class="sell">${fmt(f.sellPrice)}</td>${common}</tr>`;
+  }
+  const others = f.offers > 1 ? ` · ${f.offers - 1} autre${f.offers > 2 ? "s" : ""} PNJ` : "";
+  const unlock = SHOP_UNLOCKS[f.id];
+  return `<tr>${item}
+      <td class="npc">${f.shop.npc}${unlock ? '<span class="warn">DÉBLOCAGE</span>' : ""}<small>${islandName(f.shop.island)}${others}</small>${unlock ? `<small>${unlock}</small>` : ""}</td>
+      <td class="buy">${fmt(f.buyPrice)}</td>${mode}
+      <td>${priceCell(f.sellPrice, "sell")}</td>
+      <td>${gameCell(f.instaSell)}</td>${common}</tr>`;
+}
+
+function render() {
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  $("tabHint").textContent = TABS[tab].hint;
+
+  const key = $("sortBy").value;
+  $("head").innerHTML = "<tr>" + TABS[tab].columns
+    .map(([k, label]) => `<th data-key="${k}" class="${k === key ? "sorted" : ""}">${label}</th>`).join("") + "</tr>";
+
+  for (const which of Object.keys(TABS)) {
+    const n = computeFlips(which).visible.length;
+    $(which === "toNpc" ? "countToNpc" : "countFromNpc").textContent = `(${n})`;
+  }
+
+  const { visible, toCheck, traps } = computeFlips(tab);
+  ensureHistory(toCheck);
+  const labels = { inflated: "volume gonflé", manipulated: "prix gonflé", thinBook: "carnet vide" };
+  const parts = Object.entries(traps).filter(([, n]) => n).map(([k, n]) => `${n} ${labels[k]}`);
+  $("traps").textContent = parts.length ? "Pièges écartés : " + parts.join(" · ") : "";
+
+  if (tab === "fromNpc" && !window.NPC_SHOPS) {
+    $("rows").innerHTML = `<tr><td colspan="17" class="empty">Fichier npc-shops.js introuvable : lance « python3 update_npc_data.py » dans ce dossier.</td></tr>`;
+    return;
+  }
+  if (!visible.length) {
+    $("rows").innerHTML = `<tr><td colspan="17" class="empty">Aucun flip ne correspond à tes filtres.</td></tr>`;
+    return;
+  }
+  $("rows").innerHTML = visible.slice(0, 200).map(rowHtml).join("");
+}
+
+// ---------- historique Coflnet ----------
+// Échanges par heure sur les ~72 dernières heures, à partir du volume glissant sur 7 j
+function recentRate(raw, key, hours = 72) {
+  if (raw.length < 2) return null;
+  const t = pt => Date.parse(pt.timestamp);
+  const t0 = t(raw[0]);
+  let j = 1;
+  while (j < raw.length - 1 && t0 - t(raw[j]) < hours * 3600e3) j++;
+  const span = (t0 - t(raw[j])) / 3600e3;
+  const now = raw[0][key], then = raw[j][key], prevWeek = raw[raw.length - 1][key];
+  if (!(span > 0) || now == null || then == null || prevWeek == null) return null;
+  return Math.max(0, now - then + prevWeek * span / 168) / span;
+}
+
+// Échanges par heure d'une journée médiane de la semaine (un pic d'un jour ne compte pas)
+function dailyRate(raw, key) {
+  const t = pt => Date.parse(pt.timestamp);
+  const t0 = t(raw[0]), prevWeek = raw[raw.length - 1][key];
+  const before = hrs => raw.find(pt => t0 - t(pt) >= hrs * 3600e3);
+  const days = [];
+  for (let d = 0; d < 7; d++) {
+    const a = d === 0 ? raw[0] : before(24 * d), b = before(24 * (d + 1));
+    if (!a || !b || a[key] == null || b[key] == null || prevWeek == null) break;
+    const span = (t(a) - t(b)) / 3600e3;
+    days.push(Math.max(0, a[key] - b[key] + prevWeek * span / 168) / span);
+  }
+  return days.length >= 3 ? median(days) : null;
+}
+
+function ensureHistory(ids) {
+  const now = Date.now();
+  for (const id of ids) {
+    const h = priceHistory[id];
+    const fresh = h && now - h.at < (h.failed ? 60000 : HISTORY_TTL);
+    if (!fresh && !historyQueue.includes(id)) historyQueue.push(id);
+  }
+  pumpHistory();
+}
+
+function pumpHistory() {
+  while (historyActive < HISTORY_PARALLEL && historyQueue.length) {
+    const id = historyQueue.shift();
+    historyActive++;
+    fetchHistory(id).finally(() => {
+      scheduleRender();
+      setTimeout(() => { historyActive--; pumpHistory(); }, 200);
+    });
+  }
+}
+
+async function fetchHistory(id) {
+  try {
+    const res = await fetch(HISTORY_URL(id));
+    if (!res.ok) throw new Error(res.status);
+    const raw = await res.json(); // du plus récent au plus ancien
+    // Coflnet : "buy" = sell offer la moins chère
+    const sellOffers = raw.map(pt => pt.buy).filter(x => x > 0);
+    if (sellOffers.length < 10) throw new Error("pas assez d'historique");
+    priceHistory[id] = {
+      medSellOrder: median(sellOffers),
+      recentBuyRate: recentRate(raw, "sellMovingWeek"),
+      recentSellRate: recentRate(raw, "buyMovingWeek"),
+      dailyBuyRate: dailyRate(raw, "sellMovingWeek"),
+      dailySellRate: dailyRate(raw, "buyMovingWeek"),
+      at: Date.now(),
+    };
+  } catch {
+    priceHistory[id] = { failed: true, at: Date.now() };
+  }
+}
+
+function scheduleRender() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(render, 150);
+}
+
+// ---------- chargement des données ----------
+async function loadItems() {
+  try {
+    const res = await fetch(ITEMS_URL);
+    const data = await res.json();
+    for (const it of data.items || []) {
+      names[it.id] = it.name.replace(/§.|%%\w+%%/g, "");
+      if (it.npc_sell_price > 0) npcSell[it.id] = it.npc_sell_price;
+    }
+  } catch {
+    $("status").textContent = "Erreur : impossible de charger les prix de revente PNJ";
+  }
+}
+
+async function loadBazaar() {
+  $("status").textContent = "Actualisation…";
+  try {
+    const res = await fetch(BAZAAR_URL);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.cause || "réponse invalide");
+    products = data.products;
+    const t = new Date(data.lastUpdated).toLocaleTimeString("fr-FR");
+    const shopsDate = window.NPC_SHOPS?.generated;
+    $("status").textContent = `${Object.keys(products).length} items · bazar de ${t}` +
+      (shopsDate ? ` · prix PNJ du ${new Date(shopsDate).toLocaleDateString("fr-FR")}` : "");
+    render();
+  } catch (e) {
+    $("status").textContent = "Erreur API : " + e.message;
+  }
+}
+
+function scheduleRefresh() {
+  clearInterval(refreshTimer);
+  if ($("auto").checked) refreshTimer = setInterval(loadBazaar, REFRESH_MS);
+}
+
+// ---------- événements ----------
+for (const id of settingIds.concat("search")) {
+  $(id).addEventListener("input", () => { saveSettings(); render(); });
+}
+$("auto").addEventListener("change", scheduleRefresh);
+$("refresh").addEventListener("click", loadBazaar);
+
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+  tab = b.dataset.tab;
+  saveSettings();
+  render();
+}));
+
+$("head").addEventListener("click", e => {
+  const th = e.target.closest("th");
+  const opt = th && [...$("sortBy").options].find(o => o.value === th.dataset.key);
+  if (opt) { $("sortBy").value = opt.value; saveSettings(); render(); }
+});
+
+$("rows").addEventListener("click", e => {
+  const el = e.target.closest("[data-copy]");
+  if (!el) return;
+  navigator.clipboard.writeText(el.dataset.copy).then(() => toast("Copié : " + el.dataset.copy));
+});
+
+loadSettings();
+scheduleRefresh();
+loadItems().then(loadBazaar);
+</script>
+</body>
+</html>
